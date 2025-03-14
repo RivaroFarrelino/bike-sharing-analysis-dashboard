@@ -4,94 +4,114 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Load data
-main_df = pd.read_csv("main_data.csv")
+day_df = pd.read_csv("day.csv")
 
-# Mapping values
-main_df['yr'] = main_df['yr_hour'].map({0: 2011, 1: 2012})
-month_map = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
-             7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
-main_df['mnth'] = main_df['mnth_hour'].map(month_map)
+day_df['yr'] = day_df['yr'].map({0: 2011, 1: 2012})
 
-# Buat kategori kelembaban
-bins_hum = [0, 0.3, 0.6, 1]
-labels_hum = ["Rendah", "Sedang", "Tinggi"]
-main_df["hum_category"] = pd.cut(main_df["hum_day"], bins=bins_hum, labels=labels_hum)
+drop_col = ['instant', 'season', 'holiday', 'weekday', 'workingday', 'windspeed', 'weathersit', 'casual', 'registered']
 
-# Buat kategori kecepatan angin
-bins_wind = [0, 0.2, 0.4, 1]
-labels_wind = ["Rendah", "Sedang", "Tinggi"]
-main_df["wind_category"] = pd.cut(main_df["windspeed_day"], bins=bins_wind, labels=labels_wind)
+for i in day_df.columns:
+  if i in drop_col:
+    day_df.drop(labels=i, axis=1, inplace=True)
+
+# Mengubah nama judul kolom
+day_df.rename(columns={
+    'dteday': 'dateday',
+    'yr': 'year',
+    'mnth': 'month',
+    'temp': 'temperature',
+    'atemp': 'feeling_temperature',
+    'hum': 'humidity',
+    'cnt': 'count'
+}, inplace=True)
+
+day_df['month'] = day_df['month'].map({
+    1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
+    7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
+})
+
+def create_daily_rent_df(df):
+    daily_rent_df = df.groupby(by='dateday').agg({
+        'count': 'sum'
+    }).reset_index()
+    return daily_rent_df
+
+def create_monthly_rent_df(df):
+    monthly_rent_df = df.groupby(by='month').agg({
+        'count': 'sum'
+    })
+    ordered_months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ]
+    monthly_rent_df = monthly_rent_df.reindex(ordered_months, fill_value=0)
+    return monthly_rent_df
+
+
+min_date = pd.to_datetime(day_df['dateday']).dt.date.min()
+max_date = pd.to_datetime(day_df['dateday']).dt.date.max()
 
 def filter_data(df):
     """Filter berdasarkan tahun dengan opsi 'Semua Tahun'."""
     st.sidebar.header("Filter Data")
-    year_options = ['Semua Tahun'] + list(df['yr'].unique())
+    year_options = ['Semua Tahun'] + list(df['year'].unique())
     year_selected = st.sidebar.selectbox("Pilih Tahun:", year_options)
-    return df if year_selected == 'Semua Tahun' else df[df['yr'] == year_selected]
+    return df if year_selected == 'Semua Tahun' else df[df['year'] == year_selected]
 
 def show_metrics(df):
     """Menampilkan metrik utama."""
     col1, col2 = st.columns(2)
     with col1:
-        total_rentals = df['cnt_day'].sum()
+        total_rentals = df['count'].sum()
         st.metric(label="Total Peminjaman", value=f"{total_rentals:,}")
     with col2:
-        avg_rentals = round(df['cnt_day'].mean(), 2)
+        avg_rentals = round(df['count'].mean())
         st.metric(label="Rata-rata Peminjaman Harian", value=f"{avg_rentals:,}")
 
-def plot_trend(df):
-    """Tren peminjaman per tahun dan per bulan."""
-    st.subheader("📈 Tren Peminjaman Sepeda per Tahun & Bulan")
-    yearly_trend = df.groupby("yr")["cnt_day"].sum().reset_index()
-    monthly_trend = df.groupby("mnth")["cnt_day"].sum().reset_index()
+def plot_monthly_rentals(day_df):
+    day_df['month'] = pd.Categorical(day_df['month'], categories=[
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ], ordered=True)
 
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    
-    sns.barplot(x="yr", y="cnt_day", data=yearly_trend, ax=ax[0], palette="Blues")
-    ax[0].set_xlabel("Tahun")
-    ax[0].set_ylabel("Total Peminjaman Sepeda")
-    ax[0].set_title("Tren Peminjaman Sepeda per Tahun")
+    monthly_counts = day_df.groupby(by=["month", "year"]).agg({
+        "count": "sum"
+    }).reset_index()
 
-    sns.barplot(x="mnth", y="cnt_day", data=monthly_trend, ax=ax[1], palette="Greens")
-    ax[1].set_xlabel("Bulan")
-    ax[1].set_ylabel("Total Peminjaman Sepeda")
-    ax[1].set_title("Tren Peminjaman Sepeda per Bulan")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.lineplot(
+        data=monthly_counts,
+        x="month",
+        y="count",
+        hue="year",
+        palette="rocket",
+        marker="o",
+        ax=ax
+    )
+
+    ax.set_title("Jumlah Total Sepeda yang Disewakan Berdasarkan Bulan dan Tahun")
+    ax.set_xlabel("Bulan")
+    ax.set_ylabel("Jumlah Penyewaan Sepeda")
+    ax.legend(title="Tahun", loc="upper right")
+
+    st.pyplot(fig)
+
+def plot_scatter(day_df):
+    fig, axes = plt.subplots(1, 3, figsize=(14, 6))
+
+    # Scatter plot untuk 'temperature' vs 'count'
+    sns.scatterplot(ax=axes[0], x='temperature', y='count', data=day_df, alpha=0.5)
+    axes[0].set_title('Temperature vs Count')
+
+    # Scatter plot untuk 'feeling_temperature' vs 'count'
+    sns.scatterplot(ax=axes[1], x='feeling_temperature', y='count', data=day_df, alpha=0.5)
+    axes[1].set_title('Feels Like Temperature vs Count')
+
+    # Scatter plot untuk 'humidity' vs 'count'
+    sns.scatterplot(ax=axes[2], x='humidity', y='count', data=day_df, alpha=0.5)
+    axes[2].set_title('Humidity vs Count')
 
     plt.tight_layout()
-    st.pyplot(fig)
-
-def plot_humidity_vs_rentals(df):
-    """Pengaruh kelembaban terhadap peminjaman."""
-    st.subheader("🌦️ Pengaruh Kelembaban terhadap Peminjaman")
-    
-    fig, ax = plt.subplots(figsize=(12, 5))
-    sns.barplot(x=df["hum_category"], y=df["cnt_day"], palette='Blues')
-    plt.xlabel("Kategori Kelembaban")
-    plt.ylabel("Rata-rata Peminjaman Sepeda")
-    plt.title("Pengaruh Kelembaban terhadap Peminjaman Sepeda")
-    
-    st.pyplot(fig)
-
-def plot_windspeed_vs_rentals(df):
-    """Pengaruh kecepatan angin terhadap peminjaman."""
-    st.subheader("💨 Pengaruh Kecepatan Angin terhadap Peminjaman")
-
-    fig, ax = plt.subplots(figsize=(12, 5))
-    sns.barplot(x=df["wind_category"], y=df["cnt_day"], palette='Reds')
-    plt.xlabel("Kategori Kecepatan Angin")
-    plt.ylabel("Rata-rata Peminjaman Sepeda")
-    plt.title("Pengaruh Kecepatan Angin terhadap Peminjaman Sepeda")
-
-    st.pyplot(fig)
-
-def plot_hourly_trend(df):
-    """Tren peminjaman per jam."""
-    st.subheader("🕒 Tren Peminjaman Sepeda per Jam")
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.lineplot(data=df, x='hr', y='cnt_hour', ci=None, marker='o', color='green')
-    plt.xlabel("Jam")
-    plt.ylabel("Jumlah Peminjaman")
-    plt.title("Rata-rata Peminjaman Sepeda per Jam")
     st.pyplot(fig)
 
 # Tampilan utama dashboard
@@ -99,16 +119,17 @@ st.title("🚲 Bike Sharing Dashboard")
 st.markdown("Menampilkan analisis tren peminjaman sepeda berdasarkan dataset.")
 
 # Filter data berdasarkan tahun
-filtered_data = filter_data(main_df)
+filtered_data = filter_data(day_df)
 
 # Menampilkan metrik
 show_metrics(filtered_data)
 
 # Menampilkan visualisasi berdasarkan urutan pertanyaan bisnis
-plot_trend(filtered_data)
-plot_humidity_vs_rentals(filtered_data)
-plot_windspeed_vs_rentals(filtered_data)
-plot_hourly_trend(filtered_data)
+st.subheader("Tren Peminjaman Sepeda")
+plot_monthly_rentals(filtered_data)
+
+st.subheader("Dampak Temperatur & Kelembaban pada Peminjaman Sepeda")
+plot_scatter(filtered_data)
 
 # Footer
 st.markdown("---")
