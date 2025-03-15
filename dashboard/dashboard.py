@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Load data
-day_df = pd.read_csv("day.csv")
+day_df = pd.read_csv("/dashboard/day.csv")
 
 day_df["yr"] = day_df["yr"].map({0: 2011, 1: 2012})
 
